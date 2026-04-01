@@ -7,6 +7,9 @@ function normalizeConfig(config = {}) {
     dimensions: 2,
     virtualChannels: 7,
     messageLength: 48,
+    damping: 0.5,
+    convergenceTol: 1e-6,
+    maxIterations: 30,
   };
   const traffic = {
     meanRate: 0.004,
