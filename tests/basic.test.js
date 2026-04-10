@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   PaperModel,
   erlangLossProbability,
+  estimateChannelOccupancy,
   estimatePatternPathSetupTime,
   estimateSourceWaitTime,
 } = require('../src/model');
@@ -34,13 +35,14 @@ test('initial traffic model keeps decreasing long-range correlations', () => {
 test('model summary includes topology and traffic setup', () => {
   const summary = new PaperModel({}).summarize();
 
-  assert.equal(summary.stage, 'queueing draft');
+  assert.equal(summary.stage, 'occupancy draft');
   assert.ok(summary.topology.averageHopCount > 0);
   assert.equal(summary.traffic.lags.length, 4);
   assert.ok(Number.isFinite(summary.analysis.networkLatency));
   assert.ok(summary.analysis.networkLatency > summary.topology.averageHopCount);
   assert.ok(Number.isFinite(summary.analysis.sourceWaitTime));
   assert.ok(summary.analysis.estimatedTotalLatency >= summary.analysis.networkLatency);
+  assert.equal(summary.analysis.channelOccupancyProbabilities.length, 8);
 });
 
 test('path setup time grows when channel blocking grows', () => {
@@ -62,6 +64,28 @@ test('erlang loss probability increases with offered load', () => {
   assert.ok(lowLoad >= 0);
   assert.ok(highLoad <= 1);
   assert.ok(highLoad > lowLoad);
+});
+
+test('channel occupancy probabilities form a distribution', () => {
+  const occupancy = estimateChannelOccupancy(0.004, 52, 7);
+  let totalProbability = 0;
+  for (const probability of occupancy.occupancyProbabilities) {
+    totalProbability += probability;
+  }
+
+  assert.equal(occupancy.occupancyMode, 'birth-death draft');
+  assert.equal(occupancy.occupancyProbabilities.length, 8);
+  assert.ok(Math.abs(totalProbability - 1) < 1e-12);
+  assert.ok(occupancy.fullChannelProbability >= 0);
+  assert.ok(occupancy.fullChannelProbability <= 1);
+});
+
+test('channel full probability increases with arrival rate', () => {
+  const lowRate = estimateChannelOccupancy(0.002, 52, 7);
+  const highRate = estimateChannelOccupancy(0.01, 52, 7);
+
+  assert.ok(highRate.fullChannelProbability > lowRate.fullChannelProbability);
+  assert.ok(highRate.averageBusyChannels > lowRate.averageBusyChannels);
 });
 
 test('source wait estimate increases with traffic rate', () => {

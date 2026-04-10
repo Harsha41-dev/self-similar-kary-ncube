@@ -181,15 +181,74 @@ function averagePathSetupTime(patterns, fullChannelProbability) {
 }
 
 function erlangLossProbability(offeredLoad, servers) {
-  if (offeredLoad <= 0) {
-    return 0;
+  return occupancyFromLoad(offeredLoad, servers).fullChannelProbability;
+}
+
+function occupancyFromLoad(offeredLoad, servers) {
+  const weights = [1];
+  if (offeredLoad > 0) {
+    for (let busy = 1; busy <= servers; busy += 1) {
+      weights[busy] = (weights[busy - 1] * offeredLoad) / busy;
+    }
+  } else {
+    for (let busy = 1; busy <= servers; busy += 1) {
+      weights[busy] = 0;
+    }
   }
 
-  let blocking = 1;
-  for (let server = 1; server <= servers; server += 1) {
-    blocking = (offeredLoad * blocking) / (server + (offeredLoad * blocking));
+  let totalWeight = 0;
+  for (const weight of weights) {
+    totalWeight += weight;
   }
-  return blocking;
+
+  const probabilities = [];
+  let averageBusyChannels = 0;
+  for (let busy = 0; busy < weights.length; busy += 1) {
+    const probability = weights[busy] / totalWeight;
+    probabilities.push(probability);
+    averageBusyChannels += busy * probability;
+  }
+
+  if (servers <= 0) {
+    return {
+      occupancyMode: 'birth-death draft',
+      offeredLoad,
+      occupancyProbabilities: [1],
+      fullChannelProbability: 1,
+      averageBusyChannels: 0,
+    };
+  }
+
+  return {
+    occupancyMode: 'birth-death draft',
+    offeredLoad,
+    occupancyProbabilities: probabilities,
+    fullChannelProbability: probabilities[servers],
+    averageBusyChannels,
+  };
+}
+
+function estimateChannelOccupancy(arrivalRate, serviceTime, virtualChannels) {
+  if (arrivalRate <= 0 || serviceTime <= 0) {
+    return emptyChannelOccupancy(virtualChannels);
+  }
+
+  return occupancyFromLoad(arrivalRate * serviceTime, virtualChannels);
+}
+
+function emptyChannelOccupancy(virtualChannels) {
+  const probabilities = [];
+  for (let busy = 0; busy <= virtualChannels; busy += 1) {
+    probabilities.push(busy === 0 ? 1 : 0);
+  }
+
+  return {
+    occupancyMode: 'birth-death draft',
+    offeredLoad: 0,
+    occupancyProbabilities: probabilities,
+    fullChannelProbability: 0,
+    averageBusyChannels: 0,
+  };
 }
 
 function gammaPathApproximation(pathSetupTime, averageHopCount) {
@@ -247,6 +306,7 @@ function estimateDraftMetrics(network, traffic, patterns, averageHopCount) {
   let equivalentSourcesPerChannel = 0;
   let channelArrivalRate = 0;
   const channelServiceTime = network.messageLength + averageHopCount;
+  let channelOccupancy = emptyChannelOccupancy(network.virtualChannels);
   let converged = false;
   let iterations = 0;
 
@@ -255,8 +315,12 @@ function estimateDraftMetrics(network, traffic, patterns, averageHopCount) {
     equivalentSourcesPerChannel = pathSetupTime / (4 * network.dimensions);
     channelArrivalRate = equivalentSourcesPerChannel * traffic.meanRate;
 
-    const offeredLoad = channelArrivalRate * channelServiceTime;
-    fullChannelProbability = erlangLossProbability(offeredLoad, network.virtualChannels);
+    channelOccupancy = estimateChannelOccupancy(
+      channelArrivalRate,
+      channelServiceTime,
+      network.virtualChannels,
+    );
+    fullChannelProbability = channelOccupancy.fullChannelProbability;
 
     const nextPathSetup = averagePathSetupTime(patterns, fullChannelProbability);
     if (!Number.isFinite(nextPathSetup)) {
@@ -272,6 +336,10 @@ function estimateDraftMetrics(network, traffic, patterns, averageHopCount) {
         pathSetupGamma: null,
         multiplexingFactor: 1,
         virtualChannelMultiplexingImplemented: false,
+        channelOccupancyMode: channelOccupancy.occupancyMode,
+        channelOfferedLoad: channelOccupancy.offeredLoad,
+        channelOccupancyProbabilities: channelOccupancy.occupancyProbabilities,
+        averageBusyVirtualChannels: channelOccupancy.averageBusyChannels,
         fullChannelProbability: 1,
         equivalentSourcesPerChannel,
         channelArrivalRate,
@@ -315,6 +383,10 @@ function estimateDraftMetrics(network, traffic, patterns, averageHopCount) {
     pathSetupGamma: waitEstimate.gammaFit,
     multiplexingFactor: 1,
     virtualChannelMultiplexingImplemented: false,
+    channelOccupancyMode: channelOccupancy.occupancyMode,
+    channelOfferedLoad: channelOccupancy.offeredLoad,
+    channelOccupancyProbabilities: channelOccupancy.occupancyProbabilities,
+    averageBusyVirtualChannels: channelOccupancy.averageBusyChannels,
     fullChannelProbability,
     equivalentSourcesPerChannel,
     channelArrivalRate,
@@ -343,7 +415,7 @@ class PaperModel {
 
     return {
       paper: 'A Performance Model for k-Ary n-Cube Networks with Self-Similar Traffic',
-      stage: 'queueing draft',
+      stage: 'occupancy draft',
       topology: {
         radix: network.radix,
         dimensions: network.dimensions,
@@ -356,7 +428,7 @@ class PaperModel {
       traffic: trafficModel,
       analysis,
       nextSteps: [
-        'replace the simple channel-full estimate with the paper occupancy model',
+        'extend the channel occupancy draft to include MMPP traffic states',
         'replace the M/G/1 source wait estimate with the paper MMPP/G/1 analysis',
         'add the virtual-channel multiplexing factor from the paper latency equation',
         'fit the self-similar source process with actual MMPP parameters',
@@ -374,6 +446,7 @@ module.exports = {
   PaperModel,
   buildBlockingProbabilities,
   erlangLossProbability,
+  estimateChannelOccupancy,
   estimateDraftMetrics,
   estimatePatternPathSetupTime,
   estimateSourceWaitTime,

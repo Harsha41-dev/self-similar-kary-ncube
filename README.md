@@ -17,8 +17,9 @@ The repository now includes the initial project setup plus a first analytical dr
 - basic k-ary n-cube topology utilities
 - initial self-similar traffic setup
 - first path-setup and blocking draft
+- initial channel occupancy draft using a simple birth-death model
 - basic source-wait estimate using a simple M/G/1 draft
-- iterative latency estimate with a simple channel-full approximation
+- iterative latency estimate using the draft channel occupancy result
 - basic rate sweep support from the CLI
 - sanity tests for early verification
 
@@ -27,7 +28,7 @@ The repository now includes the initial project setup plus a first analytical dr
 - `src/config.js` - basic configuration handling
 - `src/topology.js` - topology representation and average-hop calculations
 - `src/traffic.js` - initial traffic-model setup
-- `src/model.js` - early analytical workflow, path-setup estimate, and queueing draft
+- `src/model.js` - early analytical workflow, path-setup estimate, occupancy draft, and queueing draft
 - `src/cli.js` - command-line entry point for running the draft analysis
 - `tests/basic.test.js` - early validation checks
 
@@ -57,7 +58,7 @@ npm test
 
 ## Next Steps
 
-- replace the simple channel-full approximation with the paper's occupancy model
+- extend the channel occupancy draft to include the paper's MMPP traffic states
 - replace the M/G/1 source wait estimate with the paper's MMPP/G/1 queue analysis
 - add the virtual-channel multiplexing factor from the paper latency equation
 - extend the self-similar traffic module from target correlations to fitted MMPP parameters
